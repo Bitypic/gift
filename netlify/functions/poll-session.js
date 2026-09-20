@@ -93,20 +93,6 @@ async function processTelegramUpdates() {
       continue;
     }
 
-    // Guard: check current session status before overwriting
-    // If session is 'pending', it was already handled and reset — skip this update
-    // to prevent re-processing the same button click when offset wasn't saved
-    const currentSession = await dbSelectOne('sessions', { id: sessionId }, 'status,response_type').catch(() => null);
-    if (currentSession && currentSession.status === 'responded') {
-      // Only update if session is still in responded state from a previous click
-      // (This shouldn't happen normally but guards against offset failures)
-      console.log('Session already responded, overwriting:', sessionId, '->', responseType);
-    } else if (currentSession && currentSession.status === 'pending') {
-      console.log('Session is pending (already processed + reset), skipping duplicate:', sessionId, cbData);
-      await answerCallback(cbId, '✅ Already processed!');
-      continue;
-    }
-
     // Update session in Supabase
     await dbUpdate('sessions', {
       status:        'responded',
@@ -128,16 +114,14 @@ async function processTelegramUpdates() {
     await answerCallback(cbId, `✅ ${action.charAt(0).toUpperCase() + action.slice(1)} triggered!`);
   }
 
-  // Advance offset — CRITICAL: if this fails, the same button click is re-processed
+  // Advance offset — CRITICAL: if this fails, same button gets re-processed next poll
+  // Root fix: ensure telegram_offset table exists in Supabase (run-this-in-supabase.sql)
   const newOffset = maxUpdateId + 1;
   try {
     await dbUpsert('telegram_offset', { id: 1, offset_value: newOffset });
-    console.log('Offset advanced to:', newOffset);
+    console.log('Telegram offset advanced to:', newOffset);
   } catch (e) {
-    // This is the most common cause of duplicate button processing
-    // If telegram_offset table doesn't exist, run the updated supabase-schema.sql
-    console.error('CRITICAL: Failed to save Telegram offset:', e.message);
-    console.error('Table telegram_offset may not exist — run supabase-schema.sql again');
+    console.error('CRITICAL: offset save failed — table telegram_offset may not exist:', e.message);
   }
 }
 
