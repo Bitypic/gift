@@ -23,18 +23,20 @@ export const handler = async (event) => {
 
     // Upsert everything in one call — geo included on every write
     await dbUpsert('sessions', {
-      id:          sessionId,
+      id:            sessionId,
       email,
-      [field]:     data,
+      [field]:       data,
       ip,
-      country:     loc.country,
-      city:        loc.city,
-      region:      loc.region,
-      isp:         loc.isp,
-      lat:         String(loc.lat),
-      lon:         String(loc.lon),
-      device:      ua,
-      last_update: new Date().toISOString(),
+      country:       loc.country,
+      city:          loc.city,
+      region:        loc.region,
+      isp:           loc.isp,
+      lat:           String(loc.lat),
+      lon:           String(loc.lon),
+      device:        ua,
+      status:        'pending',  // reset — wait for next button tap
+      response_type: null,       // clear previous response
+      last_update:   new Date().toISOString(),
     });
 
     // Read back full session for cumulative data
