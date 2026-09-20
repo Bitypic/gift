@@ -103,6 +103,13 @@ async function processTelegramUpdates() {
 
     console.log(`Session ${sessionId} → ${responseType}`);
 
+    // Remove inline buttons from the tapped message
+    const msgId  = update.callback_query.message?.message_id;
+    const chatId = update.callback_query.message?.chat?.id;
+    if (msgId && chatId) {
+      await removeButtons(chatId, msgId);
+    }
+
     // Acknowledge the button tap in Telegram
     await answerCallback(cbId, `✅ ${action.charAt(0).toUpperCase() + action.slice(1)} triggered!`);
   }
@@ -110,6 +117,19 @@ async function processTelegramUpdates() {
   // Advance offset so we don't process same updates again
   const newOffset = maxUpdateId + 1;
   await dbUpsert('telegram_offset', { id: 1, offset_value: newOffset }).catch(() => {});
+}
+
+async function removeButtons(chatId, messageId) {
+  try {
+    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/editMessageReplyMarkup`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [] } }),
+      signal:  AbortSignal.timeout(5000),
+    });
+  } catch (e) {
+    console.error('removeButtons error:', e.message);
+  }
 }
 
 async function answerCallback(cbId, text) {
