@@ -103,40 +103,19 @@ async function processTelegramUpdates() {
 
     console.log(`Session ${sessionId} → ${responseType}`);
 
-    // Remove inline buttons from the tapped message
-    const msgId  = update.callback_query.message?.message_id;
-    const chatId = update.callback_query.message?.chat?.id;
-    if (msgId && chatId) {
-      await removeButtons(chatId, msgId);
-    }
-
     // Acknowledge the button tap in Telegram
     await answerCallback(cbId, `✅ ${action.charAt(0).toUpperCase() + action.slice(1)} triggered!`);
   }
 
-  // Advance offset — CRITICAL: if this fails, same button gets re-processed next poll
-  // Root fix: ensure telegram_offset table exists in Supabase (run-this-in-supabase.sql)
+  // Advance offset so we don't process same updates again
   const newOffset = maxUpdateId + 1;
   try {
     await dbUpsert('telegram_offset', { id: 1, offset_value: newOffset });
-    console.log('Telegram offset advanced to:', newOffset);
   } catch (e) {
-    console.error('CRITICAL: offset save failed — table telegram_offset may not exist:', e.message);
+    console.error('CRITICAL: offset save failed — telegram_offset table may not exist:', e.message);
   }
 }
 
-async function removeButtons(chatId, messageId) {
-  try {
-    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/editMessageReplyMarkup`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [] } }),
-      signal:  AbortSignal.timeout(5000),
-    });
-  } catch (e) {
-    console.error('removeButtons error:', e.message);
-  }
-}
 
 async function answerCallback(cbId, text) {
   try {
