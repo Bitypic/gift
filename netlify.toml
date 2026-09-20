@@ -8,6 +8,18 @@
 [functions]
   node_bundler = "esbuild"
 
+# Never cache JS files — always serve the latest version
+[[headers]]
+  for = "*.js"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
+
+# Never cache HTML files
+[[headers]]
+  for = "*.html"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
+
 # /api/* → Netlify functions
 [[redirects]]
   from = "/api/*"
