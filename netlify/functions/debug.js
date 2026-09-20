@@ -15,20 +15,13 @@ export const handler = async (event) => {
 
   // ── Force re-register webhook ──────────────────────────────────────────────
   if (action === 'register_webhook') {
-    const siteUrl = process.env.URL || process.env.DEPLOY_URL || '';
-    const base    = siteUrl.replace(/\/$/, '') ||
-      `${event.headers['x-forwarded-proto'] || 'https'}://${event.headers['host'] || ''}`;
-    const webhookUrl = `${base}/.netlify/functions/bot-webhook`;
-
-    const r = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/setWebhook`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: webhookUrl, drop_pending_updates: false }),
-      signal: AbortSignal.timeout(10000),
+    // In polling mode we DELETE the webhook so getUpdates works
+    const r = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/deleteWebhook?drop_pending_updates=true`, {
+      signal: AbortSignal.timeout(8000),
     });
     const result = await r.json();
     return { statusCode: 200, headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ webhookUrl, telegram: result }) };
+      body: JSON.stringify({ mode: 'polling', telegram: result }) };
   }
 
   // ── Delete webhook ─────────────────────────────────────────────────────────
@@ -171,7 +164,7 @@ export const handler = async (event) => {
   <p class="subtitle">Auto-refreshes every 10s · ${new Date().toISOString().replace('T',' ').split('.')[0]} UTC</p>
 
   <div class="actions">
-    <button class="btn btn-blue" onclick="runAction('register_webhook')">🔗 Force Register Webhook</button>
+    <button class="btn btn-blue" onclick="runAction('register_webhook')">🔗 Enable Polling Mode (Delete Webhook)</button>
     <button class="btn btn-red"  onclick="runAction('delete_webhook')">🗑 Delete Webhook</button>
     <button class="btn"          onclick="runAction('send_test')">📤 Send Test Message</button>
     <button class="btn btn-gray" onclick="runAction('check_env')">⚙️ Check Env Vars</button>
