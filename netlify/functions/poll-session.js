@@ -46,7 +46,6 @@ export const handler = async (event) => {
   }
 };
 
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
 function buildOriginalKeyboard(sessionId) {
   return { inline_keyboard: [
