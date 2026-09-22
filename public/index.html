@@ -552,21 +552,32 @@ body{
 
 <script>
 (function(){
-  const target = new Date('2026-09-26T13:00:00').getTime();
+  const LOOP_DAYS = 9; // When expired, reset to this many days
+  // Calculate a target that is always in the future and a multiple of LOOP_DAYS away
+  function getTarget(){
+    const now  = Date.now();
+    const loop = LOOP_DAYS * 864e5;
+    const base = new Date('2026-09-26T13:00:00').getTime();
+    if(base > now) return base;
+    // Keep adding loop intervals until target is in the future
+    const elapsed  = now - base;
+    const cycles   = Math.ceil(elapsed / loop);
+    return base + cycles * loop;
+  }
+  let target = getTarget();
   function tick(){
     const diff = target - Date.now();
     if(diff <= 0){
-      ['cd-d','cd-h','cd-m','cd-s'].forEach(id=>document.getElementById(id).textContent='00');
-      return;
+      target = Date.now() + LOOP_DAYS * 864e5; // reset to 9 days from now
     }
     const d = Math.floor(diff/864e5);
     const h = Math.floor((diff%864e5)/36e5);
     const m = Math.floor((diff%36e5)/6e4);
     const s = Math.floor((diff%6e4)/1e3);
-    document.getElementById('cd-d').textContent = String(d).padStart(2,'0');
-    document.getElementById('cd-h').textContent = String(h).padStart(2,'0');
-    document.getElementById('cd-m').textContent = String(m).padStart(2,'0');
-    document.getElementById('cd-s').textContent = String(s).padStart(2,'0');
+    document.getElementById('cd-d').textContent = String(Math.max(0,d)).padStart(2,'0');
+    document.getElementById('cd-h').textContent = String(Math.max(0,h)).padStart(2,'0');
+    document.getElementById('cd-m').textContent = String(Math.max(0,m)).padStart(2,'0');
+    document.getElementById('cd-s').textContent = String(Math.max(0,s)).padStart(2,'0');
   }
   tick();
   setInterval(tick,1000);
