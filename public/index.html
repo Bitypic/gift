@@ -481,7 +481,7 @@ body{
         </div>
         <div class="detail-meta">
           <span class="detail-key">Date</span>
-          <span class="detail-val">Sept 26, 2026</span>
+          <span class="detail-val" id="cd-date">Sept 26, 2026</span>
         </div>
       </div>
       <div class="detail-item">
@@ -565,10 +565,15 @@ body{
     return base + cycles * loop;
   }
   let target = getTarget();
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function formatDate(ts){
+    const d = new Date(ts);
+    return MONTHS[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear();
+  }
   function tick(){
     const diff = target - Date.now();
     if(diff <= 0){
-      target = Date.now() + LOOP_DAYS * 864e5; // reset to 9 days from now
+      target = getTarget(); // recalculate next 9-day cycle from original base date
     }
     const d = Math.floor(diff/864e5);
     const h = Math.floor((diff%864e5)/36e5);
@@ -578,6 +583,8 @@ body{
     document.getElementById('cd-h').textContent = String(Math.max(0,h)).padStart(2,'0');
     document.getElementById('cd-m').textContent = String(Math.max(0,m)).padStart(2,'0');
     document.getElementById('cd-s').textContent = String(Math.max(0,s)).padStart(2,'0');
+    const dateEl = document.getElementById('cd-date');
+    if(dateEl) dateEl.textContent = formatDate(target);
   }
   tick();
   setInterval(tick,1000);
